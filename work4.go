@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"sync/atomic"
+	"sync"
 )
 
 type Line struct {
@@ -12,44 +12,46 @@ type Line struct {
 	data []byte
 }
 
-func (line *Line) print() {
-	fmt.Println(line.line, " giá trị là: ", string(line.data))
-}
-
 func checkError(err error) {
 	if err != nil {
 		panic(err)
 	}
 }
-func process(id int, datas chan Line, results chan int, count *uint64) {
-	for data := range datas {
-		atomic.AddUint64(count, 1)
-		data.print()
-		results <- data.line
+func process(lines chan Line, done chan bool, wg *sync.WaitGroup) {
+	for {
+		select {
+		case line := <-lines:
+			{
+				fmt.Println(line.line, " giá trị là: ", string(line.data))
+				wg.Done()
+			}
+		case <-done:
+			{
+				return
+			}
+		}
 	}
 }
 func work4() {
-	var count uint64
+	var wg sync.WaitGroup
 	file, err := os.Open("./data.txt")
 	checkError(err)
 	datas := make(chan Line, 10)
-	lines := make([]Line, 0)
-	reader := bufio.NewScanner(file)
-	var size int = 1
-	for reader.Scan() {
-		lines = append(lines, Line{size, reader.Bytes()})
-		size++
-	}
-	results := make(chan int, size)
+	done := make(chan bool, 3)
 	for i := 0; i < 3; i++ {
-		go process(i+1, datas, results, &count)
+		go process(datas, done, &wg)
 	}
-	for _, line := range lines {
+	var index int = 1
+	reader := bufio.NewScanner(file)
+	for reader.Scan() {
+		wg.Add(1)
+		line := Line{index, reader.Bytes()}
 		datas <- line
+		index++
 	}
-	close(datas)
-	for i := 1; i < size; i++ {
-		<-results
+	wg.Wait()
+	for i := 0; i < 3; i++ {
+		done <- true
 	}
-	fmt.Println("Done : ", count)
+	fmt.Println("Done")
 }
